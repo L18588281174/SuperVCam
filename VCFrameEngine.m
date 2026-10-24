@@ -73,9 +73,16 @@
     CVPixelBufferRef imgBuf = CMSampleBufferGetImageBuffer(sb);
     CIImage *ciImage = [CIImage imageWithCVPixelBuffer:imgBuf];
     
+    // 镜像翻转
     if (_mirrorH) {
         ciImage = [ciImage imageByApplyingTransform:CGAffineTransformMakeScale(-1, 1)];
         ciImage = [ciImage imageByApplyingTransform:CGAffineTransformMakeTranslation(1080, 0)];
+    }
+    
+    // 旋转90度
+    if (_rotate90) {
+        ciImage = [ciImage imageByApplyingTransform:CGAffineTransformMakeRotation(M_PI_2)];
+        ciImage = [ciImage imageByApplyingTransform:CGAffineTransformMakeTranslation(1920, 0)];
     }
 
     CVPixelBufferRef newBuf = NULL;
