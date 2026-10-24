@@ -1,3 +1,4 @@
+#import <QuartzCore/QuartzCore.h>
 #import <CoreImage/CoreImage.h>
 #import "VCFrameEngine.h"
 
