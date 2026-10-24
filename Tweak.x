@@ -4,6 +4,7 @@
 
 @interface VCMenuWindow : UIWindow
 @end
+
 @implementation VCMenuWindow
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
@@ -31,6 +32,7 @@ static VCMenuWindow *menuWindow = nil;
 @interface VCFrameInterceptor : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
 @property (nonatomic, weak) id realDelegate;
 @end
+
 @implementation VCFrameInterceptor
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
     CMSampleBufferRef vBuf = [[VCFrameEngine shared] nextSampleBuffer];
