@@ -12,12 +12,11 @@
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
-        self.windowLevel = UIWindowLevelAlert + 1; // 保证盖在相机上面
-        self.backgroundColor = [UIColor colorWithWhite:0 alpha:0.7];
+        self.windowLevel = UIWindowLevelAlert + 1;
+        self.backgroundColor = [UIColor colorWithWhite:0 alpha:0.8];
         self.layer.cornerRadius = 15;
         self.clipsToBounds = YES;
         
-        // 开关按钮
         self.toggleBtn = [UIButton buttonWithType:UIButtonTypeSystem];
         self.toggleBtn.frame = CGRectMake(10, 10, 120, 40);
         [self.toggleBtn setTitle:@"开启/关闭" forState:UIControlStateNormal];
@@ -25,7 +24,6 @@
         [self.toggleBtn addTarget:self action:@selector(toggleVCam) forControlEvents:UIControlEventTouchUpInside];
         [self addSubview:self.toggleBtn];
         
-        // 选视频按钮
         UIButton *pickBtn = [UIButton buttonWithType:UIButtonTypeSystem];
         pickBtn.frame = CGRectMake(10, 60, 120, 40);
         [pickBtn setTitle:@"从相册选择" forState:UIControlStateNormal];
@@ -40,33 +38,48 @@
     [VCFrameEngine shared].isEnabled = ![VCFrameEngine shared].isEnabled;
 }
 
+// 获取当前的顶层控制器（兼容 iOS 15）
+- (UIViewController *)getTopViewController {
+    UIWindow *window = nil;
+    if (@available(iOS 13.0, *)) {
+        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                window = scene.windows.firstObject;
+                break;
+            }
+        }
+    }
+    if (!window) window = [UIApplication sharedApplication].windows.firstObject;
+    
+    UIViewController *vc = window.rootViewController;
+    while (vc.presentedViewController) {
+        vc = vc.presentedViewController;
+    }
+    return vc;
+}
+
 - (void)pickVideo {
-    self.hidden = YES; // 隐藏窗口去选视频
+    self.hidden = YES;
     PHPickerConfiguration *config = [[PHPickerConfiguration alloc] init];
     config.filter = PHPickerFilter.videosFilter;
     PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:config];
     picker.delegate = self;
     
-    // 获取当前最顶层的 ViewController 来展示相册
-    UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
-    [rootVC presentViewController:picker animated:YES completion:nil];
+    [[self getTopViewController] presentViewController:picker animated:YES completion:nil];
 }
 
-// 选了视频之后
 - (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results {
     [picker dismissViewControllerAnimated:YES completion:nil];
     if (results.count > 0) {
         NSItemProvider *provider = results.firstObject.itemProvider;
-        if ([provider hasItemConformingToTypeIdentifier:UTTypeMovie.identifier]) {
-            [provider loadFileRepresentationForTypeIdentifier:UTTypeMovie.identifier completionHandler:^(NSURL *url, NSError *error) {
+        if ([provider hasItemConformingToTypeIdentifier:@"public.movie"]) {
+            [provider loadFileRepresentationForTypeIdentifier:@"public.movie" completionHandler:^(NSURL *url, NSError *error) {
                 if (url) {
-                    // 将视频拷贝到我们插件的临时目录
                     NSString *destPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"vcam_video.mp4"];
                     NSURL *destURL = [NSURL fileURLWithPath:destPath];
                     [[NSFileManager defaultManager] removeItemAtURL:destURL error:nil];
                     [[NSFileManager defaultManager] copyItemAtURL:url toURL:destURL error:nil];
                     
-                    // 保存路径并加载
                     [[NSUserDefaults standardUserDefaults] setObject:destPath forKey:@"VCamVideoPath"];
                     [[NSUserDefaults standardUserDefaults] synchronize];
                     
@@ -115,24 +128,22 @@ static VCamWindow *menuWindow = nil;
     interceptor.realDelegate = delegate;
     %orig(interceptor, queue);
     
-    // 初始化悬浮窗
+    // 初始化并显示悬浮窗
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!menuWindow) {
-            menuWindow = [[VCamWindow alloc] initWithFrame:CGRectMake(20, 150, 140, 110)];
+            menuWindow = [[VCamWindow alloc] initWithFrame:CGRectMake(20, 100, 140, 110)];
         }
         menuWindow.hidden = NO;
     });
 }
 %end
 
-// --- 拦截音量键 ---
+// --- 拦截音量键（用 SBVolumeControl 的现代监听方式） ---
 %hook SBVolumeControl
-- (void)increaseVolume {
+- (void)_sendVolumeButtonDown:(int)arg1 {
     %orig;
-    if (menuWindow) menuWindow.hidden = !menuWindow.hidden;
-}
-- (void)decreaseVolume {
-    %orig;
-    if (menuWindow) menuWindow.hidden = !menuWindow.hidden;
+    if (menuWindow) {
+        menuWindow.hidden = !menuWindow.hidden;
+    }
 }
 %end
