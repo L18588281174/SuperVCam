@@ -1,11 +1,16 @@
 #import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
 #import <PhotosUI/PhotosUI.h>
+#import <objc/runtime.h>
 #import "VCFrameEngine.h"
 
 // --- 悬浮窗 UI ---
 @interface VCamWindow : UIWindow
 @property (nonatomic, strong) UIButton *toggleBtn;
+@end
+
+// 声明代理，防止报错
+@interface VCamWindow () <PHPickerViewControllerDelegate>
 @end
 
 @implementation VCamWindow
@@ -38,19 +43,14 @@
     [VCFrameEngine shared].isEnabled = ![VCFrameEngine shared].isEnabled;
 }
 
-// 获取当前的顶层控制器（兼容 iOS 15）
+// 绕过废弃 API，直接用老方法找 RootViewController
 - (UIViewController *)getTopViewController {
-    UIWindow *window = nil;
-    if (@available(iOS 13.0, *)) {
-        for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
-            if (scene.activationState == UISceneActivationStateForegroundActive) {
-                window = scene.windows.firstObject;
-                break;
-            }
+    UIWindow *window = [UIApplication sharedApplication].keyWindow;
+    if (!window) {
+        for (UIWindow *w in [UIApplication sharedApplication].windows) {
+            if (w.isKeyWindow) { window = w; break; }
         }
     }
-    if (!window) window = [UIApplication sharedApplication].windows.firstObject;
-    
     UIViewController *vc = window.rootViewController;
     while (vc.presentedViewController) {
         vc = vc.presentedViewController;
@@ -63,7 +63,8 @@
     PHPickerConfiguration *config = [[PHPickerConfiguration alloc] init];
     config.filter = PHPickerFilter.videosFilter;
     PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:config];
-    picker.delegate = self;
+    // 强制转换代理类型，消除报错
+    picker.delegate = (id<PHPickerViewControllerDelegate>)self;
     
     [[self getTopViewController] presentViewController:picker animated:YES completion:nil];
 }
@@ -128,7 +129,6 @@ static VCamWindow *menuWindow = nil;
     interceptor.realDelegate = delegate;
     %orig(interceptor, queue);
     
-    // 初始化并显示悬浮窗
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!menuWindow) {
             menuWindow = [[VCamWindow alloc] initWithFrame:CGRectMake(20, 100, 140, 110)];
@@ -138,12 +138,19 @@ static VCamWindow *menuWindow = nil;
 }
 %end
 
-// --- 拦截音量键（用 SBVolumeControl 的现代监听方式） ---
-%hook SBVolumeControl
-- (void)_sendVolumeButtonDown:(int)arg1 {
-    %orig;
-    if (menuWindow) {
-        menuWindow.hidden = !menuWindow.hidden;
-    }
+// --- 拦截音量键（改用最底层的 Runtime 监听，绝对不会崩） ---
+%ctor {
+    %init;
+    // 监听系统音量变化的通知
+    [[NSNotificationCenter defaultCenter] addObserverForName:@"AVSystemController_SystemVolumeDidChangeNotification"
+                                                      object:nil
+                                                       queue:[NSOperationQueue mainQueue]
+                                                  usingBlock:^(NSNotification *note) {
+        NSString *reason = note.userInfo[@"AVSystemController_AudioVolumeChangeReasonNotificationParameter"];
+        if ([reason isEqualToString:@"ExplicitVolumeChange"]) {
+            if (menuWindow) {
+                menuWindow.hidden = !menuWindow.hidden;
+            }
+        }
+    }];
 }
-%end
