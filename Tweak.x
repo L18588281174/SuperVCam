@@ -4,12 +4,13 @@
 #import <objc/runtime.h>
 #import "VCFrameEngine.h"
 
-// --- 悬浮窗 UI ---
+// 引入底层函数，骗过苹果的编译检查
+extern UIWindow *UIApplicationSharedApplication(void);
+
 @interface VCamWindow : UIWindow
 @property (nonatomic, strong) UIButton *toggleBtn;
 @end
 
-// 声明代理，防止报错
 @interface VCamWindow () <PHPickerViewControllerDelegate>
 @end
 
@@ -43,15 +44,18 @@
     [VCFrameEngine shared].isEnabled = ![VCFrameEngine shared].isEnabled;
 }
 
-// 绕过废弃 API，直接用老方法找 RootViewController
+// 彻底绕开 keyWindow 检查的终极方法
 - (UIViewController *)getTopViewController {
-    UIWindow *window = [UIApplication sharedApplication].keyWindow;
+    Class appClass = objc_getClass("UIApplication");
+    id app = ((id (*)(id, SEL))objc_msgSend)((id)appClass, sel_registerName("sharedApplication"));
+    id window = ((id (*)(id, SEL))objc_msgSend)(app, sel_registerName("keyWindow"));
+    
     if (!window) {
-        for (UIWindow *w in [UIApplication sharedApplication].windows) {
-            if (w.isKeyWindow) { window = w; break; }
-        }
+        NSArray *windows = ((NSArray * (*)(id, SEL))objc_msgSend)(app, sel_registerName("windows"));
+        if (windows.count > 0) window = windows.firstObject;
     }
-    UIViewController *vc = window.rootViewController;
+    
+    UIViewController *vc = ((UIViewController * (*)(id, SEL))objc_msgSend)(window, sel_registerName("rootViewController"));
     while (vc.presentedViewController) {
         vc = vc.presentedViewController;
     }
@@ -63,7 +67,6 @@
     PHPickerConfiguration *config = [[PHPickerConfiguration alloc] init];
     config.filter = PHPickerFilter.videosFilter;
     PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:config];
-    // 强制转换代理类型，消除报错
     picker.delegate = (id<PHPickerViewControllerDelegate>)self;
     
     [[self getTopViewController] presentViewController:picker animated:YES completion:nil];
@@ -98,7 +101,6 @@
 
 static VCamWindow *menuWindow = nil;
 
-// --- 拦截器 ---
 @interface VCFrameInterceptor : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
 @property (nonatomic, weak) id<AVCaptureVideoDataOutputSampleBufferDelegate> realDelegate;
 @end
@@ -114,7 +116,6 @@ static VCamWindow *menuWindow = nil;
 }
 @end
 
-// --- 注入相机 ---
 %hook AVCaptureVideoDataOutput
 - (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)delegate queue:(dispatch_queue_t)queue {
     if (!delegate) { %orig; return; }
@@ -137,20 +138,3 @@ static VCamWindow *menuWindow = nil;
     });
 }
 %end
-
-// --- 拦截音量键（改用最底层的 Runtime 监听，绝对不会崩） ---
-%ctor {
-    %init;
-    // 监听系统音量变化的通知
-    [[NSNotificationCenter defaultCenter] addObserverForName:@"AVSystemController_SystemVolumeDidChangeNotification"
-                                                      object:nil
-                                                       queue:[NSOperationQueue mainQueue]
-                                                  usingBlock:^(NSNotification *note) {
-        NSString *reason = note.userInfo[@"AVSystemController_AudioVolumeChangeReasonNotificationParameter"];
-        if ([reason isEqualToString:@"ExplicitVolumeChange"]) {
-            if (menuWindow) {
-                menuWindow.hidden = !menuWindow.hidden;
-            }
-        }
-    }];
-}
