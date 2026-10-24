@@ -1,3 +1,4 @@
+#import <CoreImage/CoreImage.h>
 #import "VCFrameEngine.h"
 
 @interface VCFrameEngine () {
