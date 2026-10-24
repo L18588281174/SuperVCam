@@ -4,11 +4,9 @@
 #import <objc/runtime.h>
 #import "VCFrameEngine.h"
 
-// 引入底层函数，骗过苹果的编译检查
-extern UIWindow *UIApplicationSharedApplication(void);
-
 @interface VCamWindow : UIWindow
 @property (nonatomic, strong) UIButton *toggleBtn;
+@property (nonatomic, strong) UIButton *mirrorBtn;
 @end
 
 @interface VCamWindow () <PHPickerViewControllerDelegate>
@@ -19,23 +17,30 @@ extern UIWindow *UIApplicationSharedApplication(void);
     self = [super initWithFrame:frame];
     if (self) {
         self.windowLevel = UIWindowLevelAlert + 1;
-        self.backgroundColor = [UIColor colorWithWhite:0 alpha:0.8];
+        self.backgroundColor = [UIColor colorWithWhite:0 alpha:0.85];
         self.layer.cornerRadius = 15;
         self.clipsToBounds = YES;
         
         self.toggleBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-        self.toggleBtn.frame = CGRectMake(10, 10, 120, 40);
-        [self.toggleBtn setTitle:@"开启/关闭" forState:UIControlStateNormal];
+        self.toggleBtn.frame = CGRectMake(10, 10, 120, 30);
+        [self.toggleBtn setTitle:@"开关替换" forState:UIControlStateNormal];
         [self.toggleBtn setTitleColor:[UIColor greenColor] forState:UIControlStateNormal];
         [self.toggleBtn addTarget:self action:@selector(toggleVCam) forControlEvents:UIControlEventTouchUpInside];
         [self addSubview:self.toggleBtn];
         
         UIButton *pickBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-        pickBtn.frame = CGRectMake(10, 60, 120, 40);
-        [pickBtn setTitle:@"从相册选择" forState:UIControlStateNormal];
+        pickBtn.frame = CGRectMake(10, 45, 120, 30);
+        [pickBtn setTitle:@"选择视频" forState:UIControlStateNormal];
         [pickBtn setTitleColor:[UIColor cyanColor] forState:UIControlStateNormal];
         [pickBtn addTarget:self action:@selector(pickVideo) forControlEvents:UIControlEventTouchUpInside];
         [self addSubview:pickBtn];
+        
+        self.mirrorBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+        self.mirrorBtn.frame = CGRectMake(10, 80, 120, 30);
+        [self.mirrorBtn setTitle:@"开启镜像" forState:UIControlStateNormal];
+        [self.mirrorBtn setTitleColor:[UIColor yellowColor] forState:UIControlStateNormal];
+        [self.mirrorBtn addTarget:self action:@selector(toggleMirror) forControlEvents:UIControlEventTouchUpInside];
+        [self addSubview:self.mirrorBtn];
     }
     return self;
 }
@@ -44,17 +49,19 @@ extern UIWindow *UIApplicationSharedApplication(void);
     [VCFrameEngine shared].isEnabled = ![VCFrameEngine shared].isEnabled;
 }
 
-// 彻底绕开 keyWindow 检查的终极方法
+- (void)toggleMirror {
+    [VCFrameEngine shared].mirrorH = ![VCFrameEngine shared].mirrorH;
+    [self.mirrorBtn setTitle:[VCFrameEngine shared].mirrorH ? @"关闭镜像" : @"开启镜像" forState:UIControlStateNormal];
+}
+
 - (UIViewController *)getTopViewController {
     Class appClass = objc_getClass("UIApplication");
     id app = ((id (*)(id, SEL))objc_msgSend)((id)appClass, sel_registerName("sharedApplication"));
     id window = ((id (*)(id, SEL))objc_msgSend)(app, sel_registerName("keyWindow"));
-    
     if (!window) {
         NSArray *windows = ((NSArray * (*)(id, SEL))objc_msgSend)(app, sel_registerName("windows"));
         if (windows.count > 0) window = windows.firstObject;
     }
-    
     UIViewController *vc = ((UIViewController * (*)(id, SEL))objc_msgSend)(window, sel_registerName("rootViewController"));
     while (vc.presentedViewController) {
         vc = vc.presentedViewController;
@@ -68,7 +75,6 @@ extern UIWindow *UIApplicationSharedApplication(void);
     config.filter = PHPickerFilter.videosFilter;
     PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:config];
     picker.delegate = (id<PHPickerViewControllerDelegate>)self;
-    
     [[self getTopViewController] presentViewController:picker animated:YES completion:nil];
 }
 
@@ -132,7 +138,7 @@ static VCamWindow *menuWindow = nil;
     
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!menuWindow) {
-            menuWindow = [[VCamWindow alloc] initWithFrame:CGRectMake(20, 100, 140, 110)];
+            menuWindow = [[VCamWindow alloc] initWithFrame:CGRectMake(20, 100, 140, 120)];
         }
         menuWindow.hidden = NO;
     });
